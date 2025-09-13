@@ -107,10 +107,7 @@ object GameSkin:
     val gs = GameSkin(File(path), name)
 
     if gameSkins.contains(name) then
-      println(s"GameSkin $name already exists")
       return
-
-    println(s"Loaded GameSkin $name")
 
     gameSkins += (name -> gs)
 
@@ -118,10 +115,16 @@ object GameSkin:
   case class GameSkinPart(part: GameSkinAsset, original: String, bufferedImage: BufferedImage):
     val pixels: Array[Int] = bufferedImage.getRGB(0, 0, bufferedImage.getWidth(), bufferedImage.getHeight(), null, 0, bufferedImage.getWidth())
 
+    def savePart(filePath: String, isFolder: Boolean = false): Unit =
+      val file = File(if isFolder then filePath + "/" + part.toString.toLowerCase() else filePath)
+      ImageIO.write(bufferedImage, "png", file)
+
 
 class GameSkin(val file: File, val name: String):
   private val bufferedImg = ImageIO.read(file)
-  private val parts: collection.mutable.Map[GameSkinAsset, GameSkin.GameSkinPart] = collection.mutable.Map()
+  private val originalParts = Map.from(GameSkinAsset.values.iterator.map(x => (x, GameSkin.GameSkinPart(x, name, getAssetPartBufferedImage(x)))))
+  private val parts: collection.mutable.Map[GameSkinAsset, GameSkin.GameSkinPart] =
+    collection.mutable.Map.from(originalParts)
 
   if bufferedImg == null then
     throw new IllegalArgumentException(s"Image not found: ${file.getAbsolutePath}")
@@ -129,14 +132,13 @@ class GameSkin(val file: File, val name: String):
   if bufferedImg.getWidth() != 1024 || bufferedImg.getHeight() != 512 then
     throw new IllegalArgumentException(s"${file.getAbsolutePath}: Image width != 1024 or Image height != 512")
 
-  for (asset <- GameSkinAsset.values)
-    parts += (asset -> GameSkin.GameSkinPart(asset, name, getAssetPartBufferedImage(asset)))
+  def saveAssetPart(part: GameSkinAsset, filePath: String, original: Boolean = true): Unit =
+    (if original then originalParts else parts)(part).savePart(filePath)
 
-  def saveAssetPart(part: GameSkinAsset, filePath: String): Unit =
-    val out = BufferedImage(part.width, part.height, BufferedImage.TYPE_INT_ARGB)
-    out.setRGB(0, 0, part.width, part.height, parts(part).pixels, 0, part.width)
-
-    ImageIO.write(out, "png", File(filePath))
+  def saveAllAssetsParts(folder: File, original: Boolean = true): Unit =
+    if !folder.exists() || !folder.isDirectory then
+      println("Expected directory to save all asset parts")
+    else (if original then originalParts else parts).foreach(_._2.savePart(folder.getName, true))
 
   def +=(part: GameSkinAsset, gameSkin: GameSkin): Unit =
     copyAssetPartFrom(part, gameSkin)
@@ -150,8 +152,8 @@ class GameSkin(val file: File, val name: String):
   def copyAssetPartFrom(part: GameSkinAsset, gameSkin: GameSkin): Unit =
     parts(part) = gameSkin.getAssetPart(part)
 
-  def getAssetPart(part: GameSkinAsset): GameSkin.GameSkinPart =
-    parts(part)
+  def getAssetPart(part: GameSkinAsset, original: Boolean = true): GameSkin.GameSkinPart =
+    if original then originalParts(part) else parts(part)
 
   def copyCursorAssets(gameSkin: GameSkin): Unit =
     massCopyAssetPartFrom(GameSkinAsset.Cursors, gameSkin)
